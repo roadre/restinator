@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('restinator', {
   allowClose: () => ipcRenderer.invoke('app:allow-close'),
   sendRequest: (request) => ipcRenderer.invoke('http:send', request),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
+  getTheme: () => ipcRenderer.invoke('prefs:theme'),
+  getChrome: () => ipcRenderer.invoke('prefs:chrome'),
+  setTheme: (theme) => ipcRenderer.invoke('prefs:set-theme', theme),
+  setWrap: (wrap) => ipcRenderer.invoke('prefs:set-wrap', wrap),
+  setHideSecrets: (hide) => ipcRenderer.invoke('prefs:set-hide-secrets', hide),
+  onMenuChrome: (cb) => ipcRenderer.on('menu:chrome', (_event, chrome) => cb(chrome)),
   onMenuOpen: (cb) => ipcRenderer.on('menu:open', cb),
   onMenuOpenRecent: (cb) =>
     ipcRenderer.on('menu:open-recent', (_event, filePath) => cb(filePath)),
@@ -23,6 +29,9 @@ contextBridge.exposeInMainWorld('restinator', {
   onMenuHideSecrets: (cb) =>
     ipcRenderer.on('menu:hide-secrets', (_event, hide) => cb(hide)),
   onMenuWrap: (cb) => ipcRenderer.on('menu:wrap', (_event, wrap) => cb(wrap)),
+  onMenuTheme: (cb) => ipcRenderer.on('menu:theme', (_event, theme) => cb(theme)),
   onMenuTab: (cb) => ipcRenderer.on('menu:tab', (_event, tab) => cb(tab)),
+  onMenuStatement: (cb) =>
+    ipcRenderer.on('menu:statement', (_event, direction) => cb(direction)),
   onCloseRequested: (cb) => ipcRenderer.on('app:close-requested', cb)
 });

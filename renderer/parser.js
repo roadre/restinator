@@ -72,6 +72,7 @@
     if (!requestMatch) return null;
 
     const method = requestMatch[1].toUpperCase();
+    const methodLine = lines[i].n;
     let url = requestMatch[2];
     i += 1;
 
@@ -111,6 +112,7 @@
     return {
       name: block.name || `${method} ${url}`,
       startLine: block.start,
+      methodLine,
       endLine: block.end,
       method,
       url: substitute(url, vars),

@@ -4,15 +4,60 @@ const fs = require('fs/promises');
 const { sendHttpRequest } = require('./http-client');
 
 const RECENTS_MAX = 15;
+const THEMES = [
+  { id: 'github_dark', label: 'GitHub Dark' },
+  { id: 'catppuccin_mocha', label: 'Catppuccin Mocha' },
+  { id: 'one_dark', label: 'One Dark' },
+  { id: 'dracula', label: 'Dracula' },
+  { id: 'nord_dark', label: 'Nord Dark' },
+  { id: 'monokai', label: 'Monokai' },
+  { id: 'tomorrow_night', label: 'Tomorrow Night' },
+  { id: 'twilight', label: 'Twilight' },
+  { id: 'solarized_dark', label: 'Solarized Dark' },
+  { id: 'cobalt', label: 'Cobalt' },
+  { id: 'ambiance', label: 'Ambiance' },
+  { id: 'clouds_midnight', label: 'Clouds Midnight' },
+  { type: 'separator' },
+  { id: 'github', label: 'GitHub Light' },
+  { id: 'catppuccin_latte', label: 'Catppuccin Latte' },
+  { id: 'chrome', label: 'Chrome' },
+  { id: 'cloud_editor', label: 'Cloud Editor' },
+  { id: 'solarized_light', label: 'Solarized Light' },
+  { id: 'textmate', label: 'TextMate' },
+  { id: 'xcode', label: 'Xcode' },
+  { id: 'clouds', label: 'Clouds' }
+];
+const THEME_IDS = new Set(THEMES.filter((item) => item.id).map((item) => item.id));
 
 let mainWindow;
 let allowClose = false;
 let wrapText = false;
 let hideSecrets = true;
+let editorTheme = 'github_dark';
 let recents = [];
 
 function recentsFile() {
   return path.join(app.getPath('userData'), 'recent-files.json');
+}
+
+function themeFile() {
+  return path.join(app.getPath('userData'), 'theme.json');
+}
+
+async function loadTheme() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(themeFile(), 'utf8'));
+    if (parsed && THEME_IDS.has(parsed.theme)) {
+      editorTheme = parsed.theme;
+    }
+  } catch {
+    editorTheme = 'github_dark';
+  }
+}
+
+async function persistTheme() {
+  await fs.mkdir(path.dirname(themeFile()), { recursive: true });
+  await fs.writeFile(themeFile(), JSON.stringify({ theme: editorTheme }, null, 2), 'utf8');
 }
 
 async function loadRecents() {
@@ -37,12 +82,50 @@ async function rememberFile(filePath) {
   recents = [resolved, ...recents.filter((item) => item !== resolved)].slice(0, RECENTS_MAX);
   await persistRecents();
   buildMenu();
+  sendChrome();
 }
 
 async function removeRecent(filePath) {
   recents = recents.filter((item) => item !== filePath);
   await persistRecents();
   buildMenu();
+  sendChrome();
+}
+
+function menuChrome() {
+  return {
+    inWindow: process.platform === 'linux',
+    recents: recents.map((filePath) => ({
+      filePath,
+      label: `${path.basename(filePath)} — ${path.dirname(filePath)}`
+    })),
+    themes: THEMES,
+    theme: editorTheme,
+    wrapText,
+    hideSecrets
+  };
+}
+
+function sendChrome() {
+  sendMenu('menu:chrome', menuChrome());
+}
+
+function themeMenuItems() {
+  return THEMES.map((item) => {
+    if (item.type === 'separator') return { type: 'separator' };
+    return {
+      label: item.label,
+      type: 'checkbox',
+      checked: editorTheme === item.id,
+      click: () => {
+        editorTheme = item.id;
+        persistTheme();
+        sendMenu('menu:theme', editorTheme);
+        buildMenu();
+        sendChrome();
+      }
+    };
+  });
 }
 
 function recentMenuItems() {
@@ -63,6 +146,7 @@ function createWindow() {
     minWidth: 860,
     minHeight: 520,
     backgroundColor: '#1e1e1e',
+    autoHideMenuBar: process.platform === 'linux',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -73,6 +157,10 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.setTitle('Untitled — Restinator');
+  mainWindow.webContents.on('did-finish-load', () => {
+    sendMenu('menu:theme', editorTheme);
+    sendChrome();
+  });
 
   function registerF9() {
     globalShortcut.unregister('F9');
@@ -92,6 +180,9 @@ function createWindow() {
   });
 
   buildMenu();
+  if (process.platform === 'linux') {
+    mainWindow.setMenuBarVisibility(false);
+  }
 }
 
 function sendMenu(channel, ...args) {
@@ -157,6 +248,21 @@ function buildMenu() {
       ]
     },
     {
+      label: 'Navigate',
+      submenu: [
+        {
+          label: 'Statement Up',
+          accelerator: 'Ctrl+Up',
+          click: () => sendMenu('menu:statement', 'up')
+        },
+        {
+          label: 'Statement Down',
+          accelerator: 'Ctrl+Down',
+          click: () => sendMenu('menu:statement', 'down')
+        }
+      ]
+    },
+    {
       label: 'View',
       submenu: [
         {
@@ -166,7 +272,12 @@ function buildMenu() {
           click: (item) => {
             wrapText = item.checked;
             sendMenu('menu:wrap', wrapText);
+            sendChrome();
           }
+        },
+        {
+          label: 'Theme',
+          submenu: themeMenuItems()
         }
       ]
     },
@@ -180,6 +291,7 @@ function buildMenu() {
           click: (item) => {
             hideSecrets = item.checked;
             sendMenu('menu:hide-secrets', hideSecrets);
+            sendChrome();
           }
         },
         { type: 'separator' },
@@ -326,8 +438,36 @@ ipcMain.handle('clipboard:write', async (_event, text) => {
   clipboard.writeText(String(text || ''));
 });
 
+ipcMain.handle('prefs:theme', () => editorTheme);
+
+ipcMain.handle('prefs:chrome', () => menuChrome());
+
+ipcMain.handle('prefs:set-theme', async (_event, theme) => {
+  if (!THEME_IDS.has(theme)) return editorTheme;
+  editorTheme = theme;
+  await persistTheme();
+  buildMenu();
+  sendChrome();
+  return editorTheme;
+});
+
+ipcMain.handle('prefs:set-wrap', (_event, wrap) => {
+  wrapText = !!wrap;
+  buildMenu();
+  sendChrome();
+  return wrapText;
+});
+
+ipcMain.handle('prefs:set-hide-secrets', (_event, hide) => {
+  hideSecrets = !!hide;
+  buildMenu();
+  sendChrome();
+  return hideSecrets;
+});
+
 app.whenReady().then(async () => {
   await loadRecents();
+  await loadTheme();
   createWindow();
 });
 

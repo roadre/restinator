@@ -29,7 +29,7 @@ Accept: text/html
 
   const editor = ace.edit('editor');
   editor.session.setUseWorker(false);
-  editor.setTheme('ace/theme/twilight');
+  editor.setTheme('ace/theme/github_dark');
   editor.session.setMode('ace/mode/rest');
   editor.setShowPrintMargin(false);
   editor.setOptions({
@@ -44,7 +44,7 @@ Accept: text/html
 
   const resultEditor = ace.edit('result-editor');
   resultEditor.session.setUseWorker(false);
-  resultEditor.setTheme('ace/theme/twilight');
+  resultEditor.setTheme('ace/theme/github_dark');
   resultEditor.session.setMode('ace/mode/json');
   resultEditor.setReadOnly(true);
   resultEditor.setShowPrintMargin(false);
@@ -56,6 +56,15 @@ Accept: text/html
     useWorker: false
   });
   resultEditor.setValue('Submit a request with F9 (or Edit → Submit).', -1);
+
+  function applyTheme(name) {
+    if (!name) return;
+    const id = String(name).startsWith('ace/theme/') ? name : `ace/theme/${name}`;
+    editor.setTheme(id);
+    resultEditor.setTheme(id);
+  }
+
+  window.restinator.getTheme().then(applyTheme);
 
   const state = {
     filePath: null,
@@ -102,20 +111,117 @@ Accept: text/html
 
   editor.commands.addCommand({
     name: 'submitRequest',
-    bindKey: { win: 'F9', mac: 'F9' },
+    bindKey: { win: 'F9|Ctrl-Enter', mac: 'F9|Ctrl-Enter' },
     exec: () => {
       submitCurrent();
     }
   });
   resultEditor.commands.addCommand({
     name: 'submitRequest',
-    bindKey: { win: 'F9', mac: 'F9' },
+    bindKey: { win: 'F9|Ctrl-Enter', mac: 'F9|Ctrl-Enter' },
     exec: () => {
       submitCurrent();
     }
   });
 
+  let lastStatementNav = 0;
+
+  function gotoStatement(direction) {
+    const now = Date.now();
+    if (now - lastStatementNav < 80) return;
+    lastStatementNav = now;
+
+    const rows = requestGutterRows.length
+      ? requestGutterRows
+      : (RestParser.parseRestDocument(editor.getValue()).requests || [])
+          .map((req) => req.methodLine)
+          .filter((row) => Number.isInteger(row));
+    if (!rows.length) return;
+
+    const current = editor.getCursorPosition().row;
+    let target = null;
+    if (direction < 0) {
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        if (rows[i] < current) {
+          target = rows[i];
+          break;
+        }
+      }
+    } else {
+      for (let i = 0; i < rows.length; i += 1) {
+        if (rows[i] > current) {
+          target = rows[i];
+          break;
+        }
+      }
+    }
+    if (target == null) return;
+    editor.gotoLine(target + 1, 0, true);
+    editor.focus();
+  }
+
+  [editor, resultEditor].forEach((pane) => {
+    pane.commands.removeCommand('scrollup');
+    pane.commands.removeCommand('scrolldown');
+    pane.commands.addCommand({
+      name: 'statementUp',
+      bindKey: { win: 'Ctrl-Up', mac: 'Ctrl-Up' },
+      exec: () => gotoStatement(-1),
+      readOnly: true
+    });
+    pane.commands.addCommand({
+      name: 'statementDown',
+      bindKey: { win: 'Ctrl-Down', mac: 'Ctrl-Down' },
+      exec: () => gotoStatement(1),
+      readOnly: true
+    });
+  });
+
+  let requestGutterRows = [];
+
+  function refreshRequestGutter() {
+    const doc = RestParser.parseRestDocument(editor.getValue());
+    const rows = (doc.requests || [])
+      .map((req) => req.methodLine)
+      .filter((row) => Number.isInteger(row));
+    const same =
+      rows.length === requestGutterRows.length &&
+      rows.every((row, i) => row === requestGutterRows[i]);
+    if (same) return;
+    requestGutterRows = rows;
+    editor.session.clearBreakpoints();
+    rows.forEach((row) => {
+      editor.session.setBreakpoint(row, 'ace_run ');
+    });
+  }
+
+  function runChevronRow(e) {
+    const region = editor.renderer.$gutterLayer.getRegion(e);
+    if (region !== 'markers') return false;
+    const row = e.getDocumentPosition().row;
+    return requestGutterRows.includes(row) ? row : false;
+  }
+
+  editor.on('guttermousedown', (e) => {
+    if (e.getButton() !== 0) return;
+    const row = runChevronRow(e);
+    if (row === false) return;
+    e.stop();
+    editor.gotoLine(row + 1, 0, true);
+    submitCurrent();
+  });
+  editor.on('guttermousemove', (e) => {
+    const over = runChevronRow(e) !== false;
+    editor.renderer.$gutter.style.cursor = over ? 'pointer' : '';
+    editor.renderer.$gutter.title = over ? 'Run request' : '';
+  });
+  editor.renderer.$gutter.addEventListener('mouseleave', () => {
+    editor.renderer.$gutter.style.cursor = '';
+    editor.renderer.$gutter.title = '';
+  });
+
   editor.session.on('change', () => {
+    refreshRequestGutter();
     if (!state.dirty) {
       state.dirty = true;
       updateTitle();
@@ -124,6 +230,7 @@ Accept: text/html
   editor.selection.on('changeCursor', updateCursor);
   updateCursor();
   updateTitle();
+  refreshRequestGutter();
 
   function setStatus(text, kind) {
     if (!els.status) return;
@@ -731,9 +838,83 @@ Accept: text/html
   window.restinator.onMenuWrap((wrap) => {
     editor.setOption('wrap', wrap);
   });
+  window.restinator.onMenuTheme((theme) => {
+    applyTheme(theme);
+  });
   window.restinator.onMenuTab((tab) => {
     showTab(tab);
   });
+  window.restinator.onMenuStatement((direction) => {
+    gotoStatement(direction === 'up' ? -1 : 1);
+  });
+
+  function activeEditor() {
+    return resultEditor.isFocused() ? resultEditor : editor;
+  }
+
+  function execEdit(command) {
+    const pane = activeEditor();
+    pane.focus();
+    if (command === 'undo') return pane.undo();
+    if (command === 'redo') return pane.redo();
+    if (command === 'selectAll') return pane.selectAll();
+    document.execCommand(command);
+  }
+
+  const menuBarEl = document.getElementById('menu-bar');
+  const menuBar = window.RestMenuBar({
+    el: menuBarEl,
+    actions: {
+      open: () => openFile(),
+      save: () => save(false),
+      saveAs: () => save(true),
+      openRecent: (filePath) => openRecent(filePath),
+      exit: () => handleClose(),
+      submit: () => submitCurrent(),
+      undo: () => execEdit('undo'),
+      redo: () => execEdit('redo'),
+      cut: () => execEdit('cut'),
+      copy: () => execEdit('copy'),
+      paste: () => execEdit('paste'),
+      selectAll: () => execEdit('selectAll'),
+      statementUp: () => gotoStatement(-1),
+      statementDown: () => gotoStatement(1),
+      wrap: (wrap) => {
+        editor.setOption('wrap', wrap);
+        window.restinator.setWrap(wrap);
+      },
+      theme: (theme) => {
+        applyTheme(theme);
+        window.restinator.setTheme(theme);
+      },
+      hideSecrets: (hide) => {
+        state.hideSecrets = hide;
+        window.restinator.setHideSecrets(hide);
+      },
+      copyCurl: () => copyAsCurl(),
+      copyExchange: () => copyRequestAndResponse(),
+      copyResponse: () => copyResponse(),
+      tab: (tab) => showTab(tab)
+    }
+  });
+
+  function applyChrome(chrome) {
+    if (!chrome) return;
+    if (chrome.inWindow) {
+      menuBarEl.hidden = false;
+      requestAnimationFrame(() => {
+        editor.resize();
+        resultEditor.resize();
+      });
+    }
+    if (chrome.theme) applyTheme(chrome.theme);
+    if (typeof chrome.wrapText === 'boolean') editor.setOption('wrap', chrome.wrapText);
+    if (typeof chrome.hideSecrets === 'boolean') state.hideSecrets = chrome.hideSecrets;
+    menuBar.setChrome(chrome);
+  }
+
+  window.restinator.getChrome().then(applyChrome);
+  window.restinator.onMenuChrome(applyChrome);
 
   let copyReset;
   els.copyUrl.addEventListener('click', async () => {
