@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, clipboard, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { sendHttpRequest } = require('./http-client');
@@ -8,6 +8,8 @@ const RECENTS_MAX = 15;
 let mainWindow;
 let allowClose = false;
 let wrapText = false;
+let hideSecrets = true;
+let recents = [];
 
 function recentsFile() {
   return path.join(app.getPath('userData'), 'recent-files.json');
@@ -71,6 +73,17 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.setTitle('Untitled — Restinator');
+
+  function registerF9() {
+    globalShortcut.unregister('F9');
+    globalShortcut.register('F9', () => sendMenu('menu:submit'));
+  }
+
+  mainWindow.on('focus', registerF9);
+  mainWindow.on('blur', () => {
+    globalShortcut.unregister('F9');
+  });
+  registerF9();
 
   mainWindow.on('close', (event) => {
     if (allowClose) return;
@@ -154,6 +167,34 @@ function buildMenu() {
             wrapText = item.checked;
             sendMenu('menu:wrap', wrapText);
           }
+        }
+      ]
+    },
+    {
+      label: 'Export',
+      submenu: [
+        {
+          label: 'Hide Secrets',
+          type: 'checkbox',
+          checked: hideSecrets,
+          click: (item) => {
+            hideSecrets = item.checked;
+            sendMenu('menu:hide-secrets', hideSecrets);
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Copy Request as curl',
+          accelerator: 'CmdOrCtrl+Shift+C',
+          click: () => sendMenu('menu:copy-curl')
+        },
+        {
+          label: 'Copy Request and Response',
+          click: () => sendMenu('menu:copy-exchange')
+        },
+        {
+          label: 'Copy Response',
+          click: () => sendMenu('menu:copy-response')
         }
       ]
     },
@@ -271,7 +312,14 @@ ipcMain.handle('app:allow-close', async () => {
 });
 
 ipcMain.handle('http:send', async (_event, request) => {
-  return sendHttpRequest(request);
+  try {
+    return await sendHttpRequest(request);
+  } catch (err) {
+    return {
+      error: err && err.message ? err.message : String(err),
+      time: 0
+    };
+  }
 });
 
 ipcMain.handle('clipboard:write', async (_event, text) => {
@@ -284,5 +332,10 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll();
   app.quit();
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });

@@ -22,6 +22,13 @@ function hasHeader(headers, name) {
   return Object.keys(headers).some((key) => key.toLowerCase() === lower);
 }
 
+function httpStatusText(statusCode, statusMessage) {
+  const code = Number(statusCode);
+  const raw = String(statusMessage || '').trim();
+  if (raw && raw !== String(code)) return raw;
+  return http.STATUS_CODES[code] || '';
+}
+
 function looksLikeJson(body) {
   const trimmed = String(body).trim();
   return trimmed.startsWith('{') || trimmed.startsWith('[');
@@ -134,7 +141,7 @@ function sendHttpRequest(request) {
           resolve({
             ok: res.statusCode >= 200 && res.statusCode < 300,
             status: res.statusCode,
-            statusText: res.statusMessage || '',
+            statusText: httpStatusText(res.statusCode, res.statusMessage),
             headers: responseHeaders,
             sentHeaders: { ...headers },
             body: buffer.toString('utf8'),

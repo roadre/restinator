@@ -63,7 +63,9 @@ Accept: text/html
     tab: 'json',
     last: null,
     sending: false,
-    displayUrl: ''
+    pendingRequest: null,
+    displayUrl: '',
+    hideSecrets: true
   };
 
   const els = {
@@ -71,7 +73,8 @@ Accept: text/html
     editorPane: document.getElementById('editor-pane'),
     cursorInfo: document.getElementById('cursor-info'),
     fileInfo: document.getElementById('file-info'),
-    status: document.getElementById('result-status'),
+    status: document.getElementById('status-message'),
+    httpStatus: document.getElementById('result-status'),
     request: document.getElementById('result-request'),
     copyUrl: document.getElementById('copy-url'),
     timing: document.getElementById('result-timing'),
@@ -104,6 +107,13 @@ Accept: text/html
       submitCurrent();
     }
   });
+  resultEditor.commands.addCommand({
+    name: 'submitRequest',
+    bindKey: { win: 'F9', mac: 'F9' },
+    exec: () => {
+      submitCurrent();
+    }
+  });
 
   editor.session.on('change', () => {
     if (!state.dirty) {
@@ -116,8 +126,23 @@ Accept: text/html
   updateTitle();
 
   function setStatus(text, kind) {
+    if (!els.status) return;
     els.status.textContent = text;
     els.status.className = `status ${kind}`;
+  }
+
+  function setHttpStatus(text, kind) {
+    if (!els.httpStatus) return;
+    els.httpStatus.textContent = text;
+    els.httpStatus.className = `status ${kind}`;
+  }
+
+  function httpStatusLabel(status, statusText) {
+    const code = status == null ? '' : String(status);
+    const reason = String(statusText || '').trim();
+    if (!code) return reason;
+    if (!reason || reason === code) return code;
+    return `${code} ${reason}`;
   }
 
   function setRequestLine(text, url) {
@@ -179,7 +204,7 @@ Accept: text/html
       requestBlock,
       '',
       'RESPONSE HEADERS',
-      `HTTP ${res.status} ${res.statusText}`,
+      `HTTP ${httpStatusLabel(res.status, res.statusText)}`,
       res.url && res.url !== req.url ? `url: ${res.url}` : null,
       formatHeaders(res.headers)
     ]
@@ -219,7 +244,30 @@ Accept: text/html
     return `${base}${html}`;
   }
 
+  function formatOutgoingRequest(req) {
+    if (!req) return '';
+    const headerLines = (req.headers || [])
+      .map((header) => `${header.name}: ${header.value}`)
+      .join('\n');
+    return [`${req.method} ${req.url}`, headerLines, req.body ? `\n${req.body}` : '']
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  function showRunning(req) {
+    els.htmlView.classList.remove('visible');
+    els.htmlView.removeAttribute('srcdoc');
+    els.resultEditor.classList.remove('hidden');
+    setResultMode('ace/mode/text');
+    const outgoing = formatOutgoingRequest(req || state.pendingRequest);
+    resultEditor.setValue(outgoing ? `Running ...\n\n${outgoing}` : 'Running ...', -1);
+  }
+
   function renderResult() {
+    if (state.sending) {
+      showRunning(state.pendingRequest);
+      return;
+    }
     const last = state.last;
     if (!last) {
       if (state.tab === 'html') {
@@ -286,57 +334,275 @@ Accept: text/html
     return out;
   }
 
-  async function submitCurrent() {
-    if (state.sending) return;
-    const text = editor.getValue();
-    const doc = RestParser.parseRestDocument(text);
-    const cursor = editor.getCursorPosition().row;
-    const request = RestParser.findRequestAtCursor(doc, cursor);
+  function shellQuote(value) {
+    return `'${String(value).replace(/'/g, `'\\''`)}'`;
+  }
 
-    if (!request) {
-      setStatus('No request', 'error');
-      setRequestLine('Place the cursor on a request and submit again.');
-      els.timing.textContent = '';
-      els.size.textContent = '';
-      state.last = { error: 'No HTTP request found at the cursor.' };
-      renderResult();
-      return;
+  function isTruthyVar(value) {
+    return /^(true|1|yes|on)$/i.test(String(value || '').trim());
+  }
+
+  function isSecretName(name) {
+    const n = String(name || '').trim();
+    return /^(x-)?(api[-_]?key|auth(orization)?|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|password|passwd|pass|bearer|credential|client[-_]?secret|private[-_]?key|jwt|session|cookie|set-cookie)$/i.test(n)
+      || /(password|passwd|secret|token|api[-_]?key)$/i.test(n);
+  }
+
+  function maskPlain(value) {
+    const text = String(value);
+    if (!text) return text;
+    return `${text.slice(0, 2)}....`;
+  }
+
+  function maskSecret(value) {
+    const text = String(value);
+    const scheme = text.match(/^(Bearer|Basic|Token)\s+(\S+)(.*)$/i);
+    if (scheme) {
+      return `${scheme[1]} ${maskPlain(scheme[2])}${scheme[3]}`;
     }
+    return maskPlain(text);
+  }
 
-    state.sending = true;
-    setStatus('Sending…', 'pending');
-    setRequestLine(`${request.method} ${request.url}`, request.url);
-    els.timing.textContent = '';
-    els.size.textContent = '';
+  function redactHeaderValue(name, value) {
+    if (!state.hideSecrets) return value;
+    return isSecretName(name) ? maskSecret(value) : value;
+  }
 
-    const vars = request.variables || {};
-    const response = await window.restinator.sendRequest({
-      method: request.method,
-      url: request.url,
-      headers: headersObject(request.headers),
-      body: request.body,
-      insecureSSL: /^(true|1|yes|on)$/i.test(String(vars.insecureSSL || vars.insecure || ''))
+  function redactHeadersObject(headers) {
+    const out = {};
+    Object.entries(headers || {}).forEach(([name, value]) => {
+      out[name] = redactHeaderValue(name, value);
+    });
+    return out;
+  }
+
+  function redactJsonValue(value, parentSecret) {
+    if (parentSecret && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) {
+      return maskSecret(String(value));
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => redactJsonValue(item, parentSecret));
+    }
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach((key) => {
+        out[key] = redactJsonValue(value[key], isSecretName(key));
+      });
+      return out;
+    }
+    return value;
+  }
+
+  function redactJsonText(text) {
+    if (!state.hideSecrets || text == null || text === '') return text;
+    try {
+      return JSON.stringify(redactJsonValue(JSON.parse(text), false), null, 2);
+    } catch {
+      return text;
+    }
+  }
+
+  function redactUrl(url) {
+    if (!state.hideSecrets || !url) return url;
+    try {
+      const parsed = new URL(url);
+      parsed.searchParams.forEach((value, key) => {
+        if (isSecretName(key)) parsed.searchParams.set(key, maskPlain(value));
+      });
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  }
+
+  function exportHeaders(req, res) {
+    const headers = (res && res.sentHeaders) || headersObject(req.headers || []);
+    return redactHeadersObject(headers);
+  }
+
+  function exportBody(text) {
+    if (text == null || text === '') return '';
+    const pretty = prettyJson(text);
+    if (pretty != null) return redactJsonText(pretty);
+    return text;
+  }
+
+  function exportResponseBody(res) {
+    if (!res) return '';
+    if (res.error) return res.error;
+    return exportBody(res.body || '');
+  }
+
+  function formatExportRequest(req, res) {
+    const headers = exportHeaders(req, res);
+    const headerLines = Object.entries(headers)
+      .map(([name, value]) => `${name}: ${value}`)
+      .join('\n');
+    const body = exportBody(req.body || '');
+    const url = redactUrl((res && res.url) || req.url);
+    return [`${req.method} ${url}`, headerLines, body ? `\n${body}` : '']
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  function toCurl(req, res) {
+    const method = (req.method || 'GET').toUpperCase();
+    const body = exportBody(req.body || '');
+    const url = redactUrl((res && res.url) || req.url);
+    const lines = [method !== 'GET' || body ? `curl -X ${method}` : 'curl'];
+    const skip = new Set(['content-length', 'transfer-encoding', 'connection']);
+
+    Object.entries(exportHeaders(req, res)).forEach(([name, value]) => {
+      if (skip.has(name.toLowerCase())) return;
+      lines.push(`-H ${shellQuote(`${name}: ${value}`)}`);
     });
 
-    state.sending = false;
-    state.last = { request, response, error: response.error || null };
-
-    if (response.error) {
-      const firstLine = String(response.error).split('\n')[0];
-      setStatus(firstLine, 'error');
-      els.timing.textContent = `${response.time} ms`;
-      els.size.textContent = '';
-    } else {
-      setStatus(`${response.status} ${response.statusText}`, statusKind(response.status));
-      setRequestLine(
-        `${request.method} ${response.url || request.url}`,
-        response.url || request.url
-      );
-      els.timing.textContent = `${response.time} ms`;
-      els.size.textContent = formatBytes(response.size);
+    const vars = req.variables || {};
+    if (isTruthyVar(vars.insecureSSL || vars.insecure)) {
+      lines.push('-k');
     }
 
-    renderResult();
+    if (body) {
+      lines.push(`--data-binary ${shellQuote(body)}`);
+    }
+
+    lines.push(shellQuote(url));
+    return lines.join(' \\\n  ');
+  }
+
+  function exportTitle(title) {
+    return `---------------------------------------------\n${title}\n---------------------------------------------`;
+  }
+
+  function formatExportExchange(req, res) {
+    const parts = [exportTitle('REQUEST'), formatExportRequest(req, res)];
+    if (!res || res.error) {
+      if (res && res.error) {
+        parts.push('', exportTitle('RESPONSE'), res.error);
+      }
+      return parts.join('\n');
+    }
+    parts.push(
+      '',
+      exportTitle('RESPONSE'),
+      httpStatusLabel(res.status, res.statusText),
+      '',
+      exportResponseBody(res)
+    );
+    return parts.join('\n');
+  }
+
+  function actualRequest() {
+    if (state.last && state.last.request) {
+      return { request: state.last.request, response: state.last.response || null };
+    }
+    const doc = RestParser.parseRestDocument(editor.getValue());
+    const request = RestParser.findRequestAtCursor(doc, editor.getCursorPosition().row);
+    if (!request) return null;
+    return { request, response: null };
+  }
+
+  async function copyExport(text, okStatus) {
+    await window.restinator.copyText(text);
+    setStatus(okStatus, 'ok');
+  }
+
+  async function copyAsCurl() {
+    const current = actualRequest();
+    if (!current) {
+      setStatus('No request', 'error');
+      setRequestLine('Place the cursor on a request, or submit one first.');
+      return;
+    }
+    await copyExport(toCurl(current.request, current.response), 'Copied curl');
+  }
+
+  async function copyRequestAndResponse() {
+    if (!state.last || !state.last.request) {
+      setStatus('No response', 'error');
+      setRequestLine('Submit a request first.');
+      return;
+    }
+    await copyExport(
+      formatExportExchange(state.last.request, state.last.response),
+      'Copied request and response'
+    );
+  }
+
+  async function copyResponse() {
+    if (!state.last || !state.last.response) {
+      setStatus('No response', 'error');
+      setRequestLine('Submit a request first.');
+      return;
+    }
+    await copyExport(exportResponseBody(state.last.response), 'Copied response');
+  }
+
+  async function submitCurrent() {
+    if (state.sending) return;
+    state.sending = true;
+    try {
+      const text = editor.getValue();
+      const doc = RestParser.parseRestDocument(text);
+      const cursor = editor.getCursorPosition().row;
+      const request = RestParser.findRequestAtCursor(doc, cursor);
+
+      if (!request) {
+        setHttpStatus('No request', 'error');
+        setRequestLine('Place the cursor on a request and submit again.');
+        els.timing.textContent = '';
+        els.size.textContent = '';
+        state.last = { error: 'No HTTP request found at the cursor.' };
+        renderResult();
+        return;
+      }
+
+      state.pendingRequest = request;
+      setHttpStatus('Running ...', 'pending');
+      setStatus('Running ...', 'pending');
+      setRequestLine(`${request.method} ${request.url}`, request.url);
+      els.timing.textContent = '';
+      els.size.textContent = '';
+      showRunning(request);
+
+      const vars = request.variables || {};
+      const response = await window.restinator.sendRequest({
+        method: request.method,
+        url: request.url,
+        headers: headersObject(request.headers),
+        body: request.body,
+        insecureSSL: isTruthyVar(vars.insecureSSL || vars.insecure)
+      });
+
+      state.last = { request, response, error: response.error || null };
+      state.sending = false;
+
+      if (response.error) {
+        const firstLine = String(response.error).split('\n')[0];
+        setHttpStatus(firstLine, 'error');
+        setStatus(firstLine, 'error');
+        els.timing.textContent = `${response.time} ms`;
+        els.size.textContent = '';
+      } else {
+        const label = httpStatusLabel(response.status, response.statusText);
+        setHttpStatus(label, statusKind(response.status));
+        setStatus(label, statusKind(response.status));
+        setRequestLine(
+          `${request.method} ${response.url || request.url}`,
+          response.url || request.url
+        );
+        els.timing.textContent = `${response.time} ms`;
+        els.size.textContent = formatBytes(response.size);
+      }
+
+      renderResult();
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      setHttpStatus('Submit failed', 'error');
+      setStatus(message, 'error');
+    } finally {
+      state.sending = false;
+    }
   }
 
   async function maybeSaveIfDirty(action) {
@@ -450,6 +716,18 @@ Accept: text/html
   window.restinator.onMenuSubmit(() => {
     submitCurrent();
   });
+  window.restinator.onMenuCopyCurl(() => {
+    copyAsCurl();
+  });
+  window.restinator.onMenuCopyExchange(() => {
+    copyRequestAndResponse();
+  });
+  window.restinator.onMenuCopyResponse(() => {
+    copyResponse();
+  });
+  window.restinator.onMenuHideSecrets((hide) => {
+    state.hideSecrets = hide;
+  });
   window.restinator.onMenuWrap((wrap) => {
     editor.setOption('wrap', wrap);
   });
@@ -462,6 +740,7 @@ Accept: text/html
     if (!state.displayUrl) return;
     await window.restinator.copyText(state.displayUrl);
     els.copyUrl.textContent = 'Copied';
+    setStatus('Copied URL', 'ok');
     clearTimeout(copyReset);
     copyReset = setTimeout(() => {
       els.copyUrl.textContent = 'Copy';

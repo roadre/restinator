@@ -32,7 +32,15 @@ body {
 
 #app {
   display: flex;
+  flex-direction: column;
   height: 100%;
+  width: 100%;
+}
+
+#workspace {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
 }
 
@@ -71,7 +79,7 @@ body {
   width: 100%;
 }
 
-.pane-footer,
+#status-bar,
 #result-meta {
   display: flex;
   align-items: center;
@@ -85,8 +93,22 @@ body {
   user-select: none;
 }
 
-.pane-footer .hint {
-  margin-left: auto;
+#status-bar {
+  flex: 0 0 28px;
+  width: 100%;
+}
+
+#status-bar .hint {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+#status-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #file-info {

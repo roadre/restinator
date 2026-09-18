@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld('restinator', {
   onMenuSave: (cb) => ipcRenderer.on('menu:save', cb),
   onMenuSaveAs: (cb) => ipcRenderer.on('menu:save-as', cb),
   onMenuSubmit: (cb) => ipcRenderer.on('menu:submit', cb),
+  onMenuCopyCurl: (cb) => ipcRenderer.on('menu:copy-curl', cb),
+  onMenuCopyExchange: (cb) => ipcRenderer.on('menu:copy-exchange', cb),
+  onMenuCopyResponse: (cb) => ipcRenderer.on('menu:copy-response', cb),
+  onMenuHideSecrets: (cb) =>
+    ipcRenderer.on('menu:hide-secrets', (_event, hide) => cb(hide)),
   onMenuWrap: (cb) => ipcRenderer.on('menu:wrap', (_event, wrap) => cb(wrap)),
   onMenuTab: (cb) => ipcRenderer.on('menu:tab', (_event, tab) => cb(tab)),
   onCloseRequested: (cb) => ipcRenderer.on('app:close-requested', cb)
