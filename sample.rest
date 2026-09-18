@@ -1,0 +1,20 @@
+@baseUrl = https://jsonplaceholder.typicode.com
+@postId = 1
+
+### Get post
+GET {{baseUrl}}/posts/{{postId}}
+Accept: application/json
+
+### Create post
+POST {{baseUrl}}/posts
+Content-Type: application/json
+
+{
+  "title": "restinator",
+  "body": "hello from a .rest file",
+  "userId": 1
+}
+
+### HTML example
+GET https://example.com
+Accept: text/html

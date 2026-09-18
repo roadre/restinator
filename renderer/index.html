@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https: http:; img-src 'self' data: blob: https: http:; font-src 'self' data: https: http:; frame-src 'self' blob:"
+    />
+    <title>Restinator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <section id="editor-pane">
+        <div id="editor"></div>
+        <footer class="pane-footer">
+          <span id="cursor-info">Ln 1, Col 1</span>
+          <span id="file-info">Untitled.rest</span>
+          <span class="hint">F9 to submit</span>
+        </footer>
+      </section>
+
+      <div id="splitter" title="Drag to resize"></div>
+
+      <section id="result-pane">
+        <header id="result-meta">
+          <span id="result-status" class="status idle">Ready</span>
+          <div id="result-url-group">
+            <span id="result-request"></span>
+            <button type="button" id="copy-url" hidden title="Copy URL">Copy</button>
+          </div>
+          <span id="result-timing"></span>
+          <span id="result-size"></span>
+        </header>
+        <nav id="tabs">
+          <button type="button" class="tab active" data-tab="json">JSON</button>
+          <button type="button" class="tab" data-tab="request">Request</button>
+          <button type="button" class="tab" data-tab="raw">Raw</button>
+          <button type="button" class="tab" data-tab="html">HTML</button>
+        </nav>
+        <div id="result-body">
+          <div id="result-editor"></div>
+          <iframe id="html-view" sandbox></iframe>
+        </div>
+      </section>
+    </div>
+
+    <script src="../node_modules/ace-builds/src-noconflict/ace.js"></script>
+    <script src="../node_modules/ace-builds/src-noconflict/theme-twilight.js"></script>
+    <script src="../node_modules/ace-builds/src-noconflict/mode-json.js"></script>
+    <script src="../node_modules/ace-builds/src-noconflict/mode-text.js"></script>
+    <script src="../node_modules/ace-builds/src-noconflict/mode-html.js"></script>
+    <script src="rest-mode.js"></script>
+    <script src="parser.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

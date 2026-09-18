@@ -1,0 +1,25 @@
+{
+  "name": "restinator",
+  "version": "1.0.0",
+  "description": "A simple REST client for .rest documents",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "rest",
+    "http",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.4.0"
+  },
+  "dependencies": {
+    "ace-builds": "^1.36.5"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
