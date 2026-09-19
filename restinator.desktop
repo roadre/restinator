@@ -1,10 +1,9 @@
 [Desktop Entry]
+Version=1.0
 Type=Application
 Name=Restinator
 Comment=A simple REST client for .rest documents
-Exec=electron /home/rolf/src/restinator
-Icon=restinator
+Exec=~/src/restinator/node_modules/electron/dist/electron /home/rolf/src/restinator/main.js
+Icon=~/src/restinator/icon.png
 Terminal=false
-Categories=Development;Network;
-StartupWMClass=Restinator
-StartupNotify=true
+Categories=Utility;Development
