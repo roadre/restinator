@@ -28,6 +28,13 @@ const THEMES = [
   { id: 'clouds', label: 'Clouds' }
 ];
 const THEME_IDS = new Set(THEMES.filter((item) => item.id).map((item) => item.id));
+const APP_ICON = path.join(__dirname, 'icon.png');
+
+app.setName('Restinator');
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('class', 'Restinator');
+  app.setDesktopName('restinator.desktop');
+}
 
 let mainWindow;
 let allowClose = false;
@@ -139,6 +146,37 @@ function recentMenuItems() {
   }));
 }
 
+async function registerLinuxDesktop() {
+  if (process.platform !== 'linux') return;
+  const home = app.getPath('home');
+  const appsDir = path.join(home, '.local/share/applications');
+  const iconDirs = [
+    path.join(home, '.local/share/icons/hicolor/256x256/apps'),
+    path.join(home, '.local/share/icons/hicolor/512x512/apps'),
+    path.join(home, '.local/share/pixmaps')
+  ];
+  await fs.mkdir(appsDir, { recursive: true });
+  await Promise.all(iconDirs.map((dir) => fs.mkdir(dir, { recursive: true })));
+  await Promise.all(
+    iconDirs.map((dir) => fs.copyFile(APP_ICON, path.join(dir, 'restinator.png')))
+  );
+
+  const execLine = `"${process.execPath.replace(/"/g, '\\"')}" "${__dirname.replace(/"/g, '\\"')}"`;
+  const desktop = [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=Restinator',
+    'Comment=A simple REST client for .rest documents',
+    `Exec=${execLine}`,
+    'Icon=restinator',
+    'Terminal=false',
+    'Categories=Development;Network;',
+    'StartupWMClass=Restinator',
+    'StartupNotify=true'
+  ].join('\n') + '\n';
+  await fs.writeFile(path.join(appsDir, 'restinator.desktop'), desktop, 'utf8');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -146,6 +184,7 @@ function createWindow() {
     minWidth: 860,
     minHeight: 520,
     backgroundColor: '#1e1e1e',
+    icon: APP_ICON,
     autoHideMenuBar: process.platform === 'linux',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -468,6 +507,13 @@ ipcMain.handle('prefs:set-hide-secrets', (_event, hide) => {
 app.whenReady().then(async () => {
   await loadRecents();
   await loadTheme();
+  await registerLinuxDesktop();
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(APP_ICON);
+  }
+  if (app.setAboutPanelOptions) {
+    app.setAboutPanelOptions({ iconPath: APP_ICON });
+  }
   createWindow();
 });
 

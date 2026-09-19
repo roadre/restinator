@@ -1,8 +1,10 @@
 {
   "name": "restinator",
+  "productName": "Restinator",
   "version": "1.0.0",
   "description": "A simple REST client for .rest documents",
   "main": "main.js",
+  "icon": "icon.png",
   "scripts": {
     "start": "electron ."
   },
