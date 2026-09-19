@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, clipboard, globalShortcut } = require('electron');
+const os = require('os');
 const path = require('path');
 const fs = require('fs/promises');
 const { sendHttpRequest } = require('./http-client');
@@ -43,58 +44,76 @@ let hideSecrets = true;
 let editorTheme = 'github_dark';
 let recents = [];
 
-function recentsFile() {
-  return path.join(app.getPath('userData'), 'recent-files.json');
+function configDir() {
+  const xdg = process.env.XDG_CONFIG_HOME;
+  return path.join(xdg && path.isAbsolute(xdg) ? xdg : path.join(os.homedir(), '.config'), 'restinator');
 }
 
-function themeFile() {
-  return path.join(app.getPath('userData'), 'theme.json');
+function configFile() {
+  return path.join(configDir(), 'config.json');
 }
 
-async function loadTheme() {
-  try {
-    const parsed = JSON.parse(await fs.readFile(themeFile(), 'utf8'));
-    if (parsed && THEME_IDS.has(parsed.theme)) {
-      editorTheme = parsed.theme;
-    }
-  } catch {
-    editorTheme = 'github_dark';
+function applyConfig(parsed) {
+  if (!parsed || typeof parsed !== 'object') return;
+  if (THEME_IDS.has(parsed.theme)) editorTheme = parsed.theme;
+  if (Array.isArray(parsed.recents)) {
+    recents = parsed.recents.filter((item) => typeof item === 'string').slice(0, RECENTS_MAX);
   }
+  if (typeof parsed.wrapText === 'boolean') wrapText = parsed.wrapText;
+  if (typeof parsed.hideSecrets === 'boolean') hideSecrets = parsed.hideSecrets;
 }
 
-async function persistTheme() {
-  await fs.mkdir(path.dirname(themeFile()), { recursive: true });
-  await fs.writeFile(themeFile(), JSON.stringify({ theme: editorTheme }, null, 2), 'utf8');
-}
-
-async function loadRecents() {
+async function loadLegacyConfig() {
+  const legacy = {};
   try {
-    const parsed = JSON.parse(await fs.readFile(recentsFile(), 'utf8'));
-    if (Array.isArray(parsed)) {
-      recents = parsed.filter((item) => typeof item === 'string').slice(0, RECENTS_MAX);
-    }
+    const parsed = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'theme.json'), 'utf8'));
+    if (parsed && THEME_IDS.has(parsed.theme)) legacy.theme = parsed.theme;
   } catch {
-    recents = [];
+    /* no legacy theme */
   }
+  try {
+    const parsed = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'recent-files.json'), 'utf8'));
+    if (Array.isArray(parsed)) legacy.recents = parsed;
+  } catch {
+    /* no legacy recents */
+  }
+  return legacy;
 }
 
-async function persistRecents() {
-  await fs.mkdir(path.dirname(recentsFile()), { recursive: true });
-  await fs.writeFile(recentsFile(), JSON.stringify(recents, null, 2), 'utf8');
+async function loadConfig() {
+  try {
+    applyConfig(JSON.parse(await fs.readFile(configFile(), 'utf8')));
+    return;
+  } catch {
+    /* fall through to legacy files */
+  }
+  applyConfig(await loadLegacyConfig());
+  await persistConfig();
+}
+
+async function persistConfig() {
+  const payload = {
+    theme: editorTheme,
+    recents,
+    wrapText,
+    hideSecrets
+  };
+  await fs.mkdir(configDir(), { recursive: true });
+  await fs.writeFile(configFile(), JSON.stringify(payload, null, 2) + '\n', 'utf8');
 }
 
 async function rememberFile(filePath) {
   if (!filePath) return;
   const resolved = path.resolve(filePath);
   recents = [resolved, ...recents.filter((item) => item !== resolved)].slice(0, RECENTS_MAX);
-  await persistRecents();
+  await persistConfig();
   buildMenu();
   sendChrome();
 }
 
 async function removeRecent(filePath) {
   recents = recents.filter((item) => item !== filePath);
-  await persistRecents();
+  await persistConfig();
   buildMenu();
   sendChrome();
 }
@@ -126,7 +145,7 @@ function themeMenuItems() {
       checked: editorTheme === item.id,
       click: () => {
         editorTheme = item.id;
-        persistTheme();
+        persistConfig();
         sendMenu('menu:theme', editorTheme);
         buildMenu();
         sendChrome();
@@ -310,6 +329,7 @@ function buildMenu() {
           checked: wrapText,
           click: (item) => {
             wrapText = item.checked;
+            persistConfig();
             sendMenu('menu:wrap', wrapText);
             sendChrome();
           }
@@ -329,6 +349,7 @@ function buildMenu() {
           checked: hideSecrets,
           click: (item) => {
             hideSecrets = item.checked;
+            persistConfig();
             sendMenu('menu:hide-secrets', hideSecrets);
             sendChrome();
           }
@@ -484,29 +505,30 @@ ipcMain.handle('prefs:chrome', () => menuChrome());
 ipcMain.handle('prefs:set-theme', async (_event, theme) => {
   if (!THEME_IDS.has(theme)) return editorTheme;
   editorTheme = theme;
-  await persistTheme();
+  await persistConfig();
   buildMenu();
   sendChrome();
   return editorTheme;
 });
 
-ipcMain.handle('prefs:set-wrap', (_event, wrap) => {
+ipcMain.handle('prefs:set-wrap', async (_event, wrap) => {
   wrapText = !!wrap;
+  await persistConfig();
   buildMenu();
   sendChrome();
   return wrapText;
 });
 
-ipcMain.handle('prefs:set-hide-secrets', (_event, hide) => {
+ipcMain.handle('prefs:set-hide-secrets', async (_event, hide) => {
   hideSecrets = !!hide;
+  await persistConfig();
   buildMenu();
   sendChrome();
   return hideSecrets;
 });
 
 app.whenReady().then(async () => {
-  await loadRecents();
-  await loadTheme();
+  await loadConfig();
   await registerLinuxDesktop();
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(APP_ICON);
