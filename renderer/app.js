@@ -21,6 +21,65 @@ GET https://example.com
 Accept: text/html
 `;
 
+  const REST_TEMPLATES = {
+    get: `### GET
+GET https://httpbin.org/get
+Accept: application/json
+`,
+    userAgent: `### User-Agent
+GET https://httpbin.org/user-agent
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36
+Accept: application/json
+`,
+    postJson: `### POST with JSON
+POST https://httpbin.org/post
+Content-Type: application/json
+Accept: application/json
+
+{
+  "title": "restinator",
+  "ok": true
+}
+`,
+    postAuth: `### POST with auth
+@token = your-token-here
+POST https://httpbin.org/post
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "restinator"
+}
+`,
+    postForm: `### POST with form fields
+POST https://httpbin.org/post
+Content-Type: application/x-www-form-urlencoded
+
+name=restinator&role=admin
+`
+  };
+
+  function insertTemplate(id) {
+    const snippet = REST_TEMPLATES[id];
+    if (!snippet) return;
+    const block = snippet.replace(/\s+$/, '');
+    const current = editor.getValue().replace(/\s+$/, '');
+    const next = current ? `${current}\n\n${block}\n` : `${block}\n`;
+    editor.setValue(next, -1);
+    const lines = next.split('\n');
+    let methodRow = 0;
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/i.test(lines[i].trim())) {
+        methodRow = i;
+        break;
+      }
+    }
+    editor.gotoLine(methodRow + 1, 0, true);
+    editor.focus();
+    setStatus('Inserted template', 'ok');
+  }
+
   const acePath = '../node_modules/ace-builds/src-noconflict';
   ace.config.set('basePath', acePath);
   ace.config.set('modePath', acePath);
@@ -847,6 +906,9 @@ Accept: text/html
   window.restinator.onMenuStatement((direction) => {
     gotoStatement(direction === 'up' ? -1 : 1);
   });
+  window.restinator.onMenuTemplate((id) => {
+    insertTemplate(id);
+  });
 
   function activeEditor() {
     return resultEditor.isFocused() ? resultEditor : editor;
@@ -894,7 +956,8 @@ Accept: text/html
       copyCurl: () => copyAsCurl(),
       copyExchange: () => copyRequestAndResponse(),
       copyResponse: () => copyResponse(),
-      tab: (tab) => showTab(tab)
+      tab: (tab) => showTab(tab),
+      template: (id) => insertTemplate(id)
     }
   });
 

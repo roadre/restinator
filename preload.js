@@ -33,5 +33,7 @@ contextBridge.exposeInMainWorld('restinator', {
   onMenuTab: (cb) => ipcRenderer.on('menu:tab', (_event, tab) => cb(tab)),
   onMenuStatement: (cb) =>
     ipcRenderer.on('menu:statement', (_event, direction) => cb(direction)),
+  onMenuTemplate: (cb) =>
+    ipcRenderer.on('menu:template', (_event, id) => cb(id)),
   onCloseRequested: (cb) => ipcRenderer.on('app:close-requested', cb)
 });

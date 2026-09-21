@@ -128,6 +128,14 @@
           { label: 'Statement Up', accel: 'Ctrl+Up', action: 'statementUp' },
           { label: 'Statement Down', accel: 'Ctrl+Down', action: 'statementDown' }
         ],
+        templates: [
+          { label: 'GET', action: 'template', arg: 'get' },
+          { label: 'GET with User-Agent', action: 'template', arg: 'userAgent' },
+          { type: 'separator' },
+          { label: 'POST with JSON', action: 'template', arg: 'postJson' },
+          { label: 'POST with auth', action: 'template', arg: 'postAuth' },
+          { label: 'POST with form fields', action: 'template', arg: 'postForm' }
+        ],
         view: [
           {
             label: 'Wrap Text',
@@ -173,6 +181,7 @@
       ['file', 'File'],
       ['edit', 'Edit'],
       ['navigate', 'Navigate'],
+      ['templates', 'Templates'],
       ['view', 'View'],
       ['export', 'Export'],
       ['response', 'Response']

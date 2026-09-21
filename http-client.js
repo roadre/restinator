@@ -93,9 +93,16 @@ function sendHttpRequest(request) {
       const lib = isHttps ? https : http;
       const method = (request.method || 'GET').toUpperCase();
       const headers = { ...(request.headers || {}) };
-      if (!Object.keys(headers).some((key) => key.toLowerCase() === 'user-agent')) {
-        headers['User-Agent'] = 'Restinator/1.0';
-      }
+      const userAgent = (() => {
+        const key = Object.keys(headers).find((name) => name.toLowerCase() === 'user-agent');
+        if (key == null) return 'Restinator/1.0';
+        const value = String(headers[key] == null ? '' : headers[key]).trim();
+        return value || 'Restinator/1.0';
+      })();
+      Object.keys(headers).forEach((name) => {
+        if (name.toLowerCase() === 'user-agent') delete headers[name];
+      });
+      headers['User-Agent'] = userAgent;
 
       const body = request.body ? String(request.body) : '';
       if (body) {
@@ -137,13 +144,17 @@ function sendHttpRequest(request) {
           Object.entries(res.headers).forEach(([key, value]) => {
             responseHeaders[key] = Array.isArray(value) ? value.join(', ') : String(value);
           });
+          const sentHeaders = {};
+          Object.entries(req.getHeaders()).forEach(([key, value]) => {
+            sentHeaders[key] = Array.isArray(value) ? value.join(', ') : String(value);
+          });
 
           resolve({
             ok: res.statusCode >= 200 && res.statusCode < 300,
             status: res.statusCode,
             statusText: httpStatusText(res.statusCode, res.statusMessage),
             headers: responseHeaders,
-            sentHeaders: { ...headers },
+            sentHeaders,
             body: buffer.toString('utf8'),
             size: buffer.length,
             time: Date.now() - started,
@@ -152,6 +163,7 @@ function sendHttpRequest(request) {
           });
         });
       });
+      req.setHeader('User-Agent', userAgent);
 
       req.on('timeout', () => {
         req.destroy(

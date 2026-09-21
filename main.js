@@ -111,13 +111,6 @@ async function rememberFile(filePath) {
   sendChrome();
 }
 
-async function removeRecent(filePath) {
-  recents = recents.filter((item) => item !== filePath);
-  await persistConfig();
-  buildMenu();
-  sendChrome();
-}
-
 function menuChrome() {
   return {
     inWindow: process.platform === 'linux',
@@ -321,6 +314,17 @@ function buildMenu() {
       ]
     },
     {
+      label: 'Templates',
+      submenu: [
+        { label: 'GET', click: () => sendMenu('menu:template', 'get') },
+        { label: 'GET with User-Agent', click: () => sendMenu('menu:template', 'userAgent') },
+        { type: 'separator' },
+        { label: 'POST with JSON', click: () => sendMenu('menu:template', 'postJson') },
+        { label: 'POST with auth', click: () => sendMenu('menu:template', 'postAuth') },
+        { label: 'POST with form fields', click: () => sendMenu('menu:template', 'postForm') }
+      ]
+    },
+    {
       label: 'View',
       submenu: [
         {
@@ -432,7 +436,6 @@ ipcMain.handle('file:openPath', async (_event, filePath) => {
       message: 'Unable to open file',
       detail: `${filePath}\n\n${err.message}`
     });
-    await removeRecent(filePath);
     return null;
   }
 });
