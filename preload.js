@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld('restinator', {
     ipcRenderer.invoke('file:saveAs', { content, defaultPath }),
   confirmUnsaved: (action) => ipcRenderer.invoke('dialog:unsaved', { action }),
   setTitle: (title) => ipcRenderer.invoke('window:setTitle', title),
-  allowClose: () => ipcRenderer.invoke('app:allow-close'),
   sendRequest: (request) => ipcRenderer.invoke('http:send', request),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   getTheme: () => ipcRenderer.invoke('prefs:theme'),
@@ -34,6 +33,5 @@ contextBridge.exposeInMainWorld('restinator', {
   onMenuStatement: (cb) =>
     ipcRenderer.on('menu:statement', (_event, direction) => cb(direction)),
   onMenuTemplate: (cb) =>
-    ipcRenderer.on('menu:template', (_event, id) => cb(id)),
-  onCloseRequested: (cb) => ipcRenderer.on('app:close-requested', cb)
+    ipcRenderer.on('menu:template', (_event, id) => cb(id))
 });

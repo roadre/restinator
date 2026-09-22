@@ -828,16 +828,6 @@ name=restinator&role=admin
     return String(left) === String(right);
   }
 
-  async function handleClose() {
-    const choice = await maybeSaveIfDirty('close');
-    if (choice === 'cancel') return;
-    if (choice === 'save') {
-      const saved = await save(false);
-      if (!saved) return;
-    }
-    await window.restinator.allowClose();
-  }
-
   els.tabs.forEach((button) => {
     button.addEventListener('click', () => showTab(button.dataset.tab));
   });
@@ -931,7 +921,7 @@ name=restinator&role=admin
       save: () => save(false),
       saveAs: () => save(true),
       openRecent: (filePath) => openRecent(filePath),
-      exit: () => handleClose(),
+      exit: () => window.close(),
       submit: () => submitCurrent(),
       undo: () => execEdit('undo'),
       redo: () => execEdit('redo'),
@@ -989,8 +979,5 @@ name=restinator&role=admin
     copyReset = setTimeout(() => {
       els.copyUrl.textContent = 'Copy';
     }, 1200);
-  });
-  window.restinator.onCloseRequested(() => {
-    handleClose();
   });
 })();

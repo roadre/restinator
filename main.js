@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs/promises');
 const { sendHttpRequest } = require('./http-client');
+const { registerDesktopShortcut } = require('./desktop-shortcut');
 
 const RECENTS_MAX = 15;
 const THEMES = [
@@ -38,7 +39,6 @@ if (process.platform === 'linux') {
 }
 
 let mainWindow;
-let allowClose = false;
 let wrapText = false;
 let hideSecrets = true;
 let editorTheme = 'github_dark';
@@ -158,37 +158,6 @@ function recentMenuItems() {
   }));
 }
 
-async function registerLinuxDesktop() {
-  if (process.platform !== 'linux') return;
-  const home = app.getPath('home');
-  const appsDir = path.join(home, '.local/share/applications');
-  const iconDirs = [
-    path.join(home, '.local/share/icons/hicolor/256x256/apps'),
-    path.join(home, '.local/share/icons/hicolor/512x512/apps'),
-    path.join(home, '.local/share/pixmaps')
-  ];
-  await fs.mkdir(appsDir, { recursive: true });
-  await Promise.all(iconDirs.map((dir) => fs.mkdir(dir, { recursive: true })));
-  await Promise.all(
-    iconDirs.map((dir) => fs.copyFile(APP_ICON, path.join(dir, 'restinator.png')))
-  );
-
-  const execLine = `"${process.execPath.replace(/"/g, '\\"')}" "${__dirname.replace(/"/g, '\\"')}"`;
-  const desktop = [
-    '[Desktop Entry]',
-    'Type=Application',
-    'Name=Restinator',
-    'Comment=A simple REST client for .rest documents',
-    `Exec=${execLine}`,
-    'Icon=restinator',
-    'Terminal=false',
-    'Categories=Development;Network;',
-    'StartupWMClass=Restinator',
-    'StartupNotify=true'
-  ].join('\n') + '\n';
-  await fs.writeFile(path.join(appsDir, 'restinator.desktop'), desktop, 'utf8');
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -223,12 +192,6 @@ function createWindow() {
     globalShortcut.unregister('F9');
   });
   registerF9();
-
-  mainWindow.on('close', (event) => {
-    if (allowClose) return;
-    event.preventDefault();
-    mainWindow.webContents.send('app:close-requested');
-  });
 
   buildMenu();
   if (process.platform === 'linux') {
@@ -270,13 +233,7 @@ function buildMenu() {
         {
           label: 'Exit',
           accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Alt+F4',
-          click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.close();
-            } else {
-              app.quit();
-            }
-          }
+          click: () => app.quit()
         }
       ]
     },
@@ -478,14 +435,6 @@ ipcMain.handle('window:setTitle', async (_event, title) => {
   }
 });
 
-ipcMain.handle('app:allow-close', async () => {
-  allowClose = true;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.close();
-  }
-  app.quit();
-});
-
 ipcMain.handle('http:send', async (_event, request) => {
   try {
     return await sendHttpRequest(request);
@@ -532,7 +481,7 @@ ipcMain.handle('prefs:set-hide-secrets', async (_event, hide) => {
 
 app.whenReady().then(async () => {
   await loadConfig();
-  await registerLinuxDesktop();
+  await registerDesktopShortcut();
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(APP_ICON);
   }
