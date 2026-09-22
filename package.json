@@ -6,7 +6,8 @@
   "main": "main.js",
   "icon": "icon.png",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "shortcut": "node desktop-shortcut.js"
   },
   "keywords": [
     "rest",
@@ -20,6 +21,9 @@
   },
   "dependencies": {
     "ace-builds": "^1.36.5"
+  },
+  "overrides": {
+    "yauzl": "3.3.1"
   },
   "allowScripts": {
     "electron@33.4.11": true
