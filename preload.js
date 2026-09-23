@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('restinator', {
   openFile: () => ipcRenderer.invoke('file:open'),
   openPath: (filePath) => ipcRenderer.invoke('file:openPath', filePath),
+  loadStartup: (defaultContent) => ipcRenderer.invoke('file:loadStartup', defaultContent),
+  writeFile: (filePath, content) => ipcRenderer.invoke('file:write', { filePath, content }),
   saveFile: (filePath, content) => ipcRenderer.invoke('file:save', { filePath, content }),
   saveFileAs: (content, defaultPath) =>
     ipcRenderer.invoke('file:saveAs', { content, defaultPath }),
@@ -17,6 +19,7 @@ contextBridge.exposeInMainWorld('restinator', {
   setHideSecrets: (hide) => ipcRenderer.invoke('prefs:set-hide-secrets', hide),
   onMenuChrome: (cb) => ipcRenderer.on('menu:chrome', (_event, chrome) => cb(chrome)),
   onMenuOpen: (cb) => ipcRenderer.on('menu:open', cb),
+  onMenuNew: (cb) => ipcRenderer.on('menu:new', cb),
   onMenuOpenRecent: (cb) =>
     ipcRenderer.on('menu:open-recent', (_event, filePath) => cb(filePath)),
   onMenuSave: (cb) => ipcRenderer.on('menu:save', cb),
@@ -33,5 +36,8 @@ contextBridge.exposeInMainWorld('restinator', {
   onMenuStatement: (cb) =>
     ipcRenderer.on('menu:statement', (_event, direction) => cb(direction)),
   onMenuTemplate: (cb) =>
-    ipcRenderer.on('menu:template', (_event, id) => cb(id))
+    ipcRenderer.on('menu:template', (_event, id) => cb(id)),
+  onAutosaveAndQuit: (cb) => ipcRenderer.on('app:autosave-and-quit', cb),
+  finishQuit: () => ipcRenderer.invoke('app:finish-quit'),
+  cancelQuit: () => ipcRenderer.invoke('app:cancel-quit')
 });

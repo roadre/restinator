@@ -53,6 +53,24 @@ function configFile() {
   return path.join(configDir(), 'config.json');
 }
 
+function startupRestFile() {
+  return path.join(configDir(), 'startup.rest');
+}
+
+let allowQuit = false;
+let quitHandshakeStarted = false;
+
+function beginQuitHandshake() {
+  if (quitHandshakeStarted || allowQuit) return;
+  quitHandshakeStarted = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app:autosave-and-quit');
+    return;
+  }
+  allowQuit = true;
+  app.quit();
+}
+
 function applyConfig(parsed) {
   if (!parsed || typeof parsed !== 'object') return;
   if (THEME_IDS.has(parsed.theme)) editorTheme = parsed.theme;
@@ -193,6 +211,12 @@ function createWindow() {
   });
   registerF9();
 
+  mainWindow.on('close', (event) => {
+    if (allowQuit) return;
+    event.preventDefault();
+    beginQuitHandshake();
+  });
+
   buildMenu();
   if (process.platform === 'linux') {
     mainWindow.setMenuBarVisibility(false);
@@ -210,6 +234,11 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'New',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => sendMenu('menu:new')
+        },
         {
           label: 'Open',
           accelerator: 'CmdOrCtrl+O',
@@ -233,7 +262,7 @@ function buildMenu() {
         {
           label: 'Exit',
           accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Alt+F4',
-          click: () => app.quit()
+          click: () => beginQuitHandshake()
         }
       ]
     },
@@ -273,6 +302,8 @@ function buildMenu() {
     {
       label: 'Templates',
       submenu: [
+        { label: 'Demo', click: () => sendMenu('menu:template', 'demo') },
+        { type: 'separator' },
         { label: 'GET', click: () => sendMenu('menu:template', 'get') },
         { label: 'GET with User-Agent', click: () => sendMenu('menu:template', 'userAgent') },
         { type: 'separator' },
@@ -397,6 +428,24 @@ ipcMain.handle('file:openPath', async (_event, filePath) => {
   }
 });
 
+ipcMain.handle('file:loadStartup', async (_event, defaultContent) => {
+  const filePath = startupRestFile();
+  await fs.mkdir(configDir(), { recursive: true });
+  try {
+    const content = await fs.readFile(filePath, 'utf8');
+    return { filePath, content };
+  } catch {
+    const content = String(defaultContent || '');
+    await fs.writeFile(filePath, content, 'utf8');
+    return { filePath, content };
+  }
+});
+
+ipcMain.handle('file:write', async (_event, { filePath, content }) => {
+  await fs.writeFile(filePath, content, 'utf8');
+  return { filePath };
+});
+
 ipcMain.handle('file:save', async (_event, { filePath, content }) => {
   await fs.writeFile(filePath, content, 'utf8');
   await rememberFile(filePath);
@@ -433,6 +482,18 @@ ipcMain.handle('window:setTitle', async (_event, title) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.setTitle(title);
   }
+});
+
+ipcMain.handle('app:finish-quit', async () => {
+  allowQuit = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+  app.quit();
+});
+
+ipcMain.handle('app:cancel-quit', async () => {
+  quitHandshakeStarted = false;
 });
 
 ipcMain.handle('http:send', async (_event, request) => {
@@ -491,9 +552,17 @@ app.whenReady().then(async () => {
   createWindow();
 });
 
+app.on('before-quit', (event) => {
+  if (allowQuit) return;
+  event.preventDefault();
+  beginQuitHandshake();
+});
+
 app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
-  app.quit();
+  if (allowQuit) {
+    app.quit();
+  }
 });
 
 app.on('will-quit', () => {

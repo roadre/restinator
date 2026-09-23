@@ -97,6 +97,7 @@
       const themes = chrome.themes || [];
       return {
         file: [
+          { label: 'New', accel: 'Ctrl+N', action: 'new' },
           { label: 'Open', accel: 'Ctrl+O', action: 'open' },
           { label: 'Save', accel: 'Ctrl+S', action: 'save' },
           { label: 'Save As', accel: 'Ctrl+Shift+S', action: 'saveAs' },
@@ -129,6 +130,8 @@
           { label: 'Statement Down', accel: 'Ctrl+Down', action: 'statementDown' }
         ],
         templates: [
+          { label: 'Demo', action: 'template', arg: 'demo' },
+          { type: 'separator' },
           { label: 'GET', action: 'template', arg: 'get' },
           { label: 'GET with User-Agent', action: 'template', arg: 'userAgent' },
           { type: 'separator' },

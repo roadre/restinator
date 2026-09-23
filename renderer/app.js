@@ -22,6 +22,7 @@ Accept: text/html
 `;
 
   const REST_TEMPLATES = {
+    demo: DEFAULT_CONTENT,
     get: `### GET
 GET https://httpbin.org/get
 Accept: application/json
@@ -99,8 +100,6 @@ name=restinator&role=admin
     scrollPastEnd: 0.4,
     useWorker: false
   });
-  editor.setValue(DEFAULT_CONTENT, -1);
-
   const resultEditor = ace.edit('result-editor');
   resultEditor.session.setUseWorker(false);
   resultEditor.setTheme('ace/theme/github_dark');
@@ -139,7 +138,8 @@ name=restinator&role=admin
     displayUrl: '',
     hideSecrets: true,
     resultSearchQuery: '',
-    resultSearchIndex: 0
+    resultSearchIndex: 0,
+    startupPath: null
   };
 
   const els = {
@@ -933,9 +933,55 @@ name=restinator&role=admin
     }
   }
 
-  async function maybeSaveIfDirty(action) {
-    if (!state.dirty) return 'discard';
-    return window.restinator.confirmUnsaved(action);
+  function isStartupDocument() {
+    return !!(state.startupPath && state.filePath && pathEquals(state.filePath, state.startupPath));
+  }
+
+  async function autosaveStartup() {
+    if (!state.startupPath || !isStartupDocument()) return;
+    await window.restinator.writeFile(state.startupPath, editor.getValue());
+    state.dirty = false;
+    updateTitle();
+  }
+
+  async function confirmReplace(action) {
+    if (isStartupDocument()) {
+      await autosaveStartup();
+      return true;
+    }
+    if (!state.dirty) return true;
+    const choice = await window.restinator.confirmUnsaved(action);
+    if (choice === 'cancel') return false;
+    if (choice === 'save') {
+      const saved = await save(false);
+      if (!saved) return false;
+    }
+    return true;
+  }
+
+  async function prepareQuit() {
+    if (isStartupDocument()) {
+      await autosaveStartup();
+      await window.restinator.finishQuit();
+      return;
+    }
+    if (!state.dirty) {
+      await window.restinator.finishQuit();
+      return;
+    }
+    const choice = await window.restinator.confirmUnsaved('close');
+    if (choice === 'cancel') {
+      await window.restinator.cancelQuit();
+      return;
+    }
+    if (choice === 'save') {
+      const saved = await save(false);
+      if (!saved) {
+        await window.restinator.cancelQuit();
+        return;
+      }
+    }
+    await window.restinator.finishQuit();
   }
 
   async function save(saveAs) {
@@ -961,18 +1007,22 @@ name=restinator&role=admin
     updateTitle();
   }
 
-  async function confirmReplace() {
-    const choice = await maybeSaveIfDirty('open');
-    if (choice === 'cancel') return false;
-    if (choice === 'save') {
-      const saved = await save(false);
-      if (!saved) return false;
+  async function newDocument() {
+    if (!(await confirmReplace('open'))) return;
+    editor.setValue(DEFAULT_CONTENT, -1);
+    state.filePath = state.startupPath;
+    if (state.startupPath) {
+      await window.restinator.writeFile(state.startupPath, DEFAULT_CONTENT);
     }
-    return true;
+    state.dirty = false;
+    updateTitle();
+    editor.gotoLine(1, 0, true);
+    editor.focus();
+    setStatus('New document', 'ok');
   }
 
   async function openFile() {
-    if (!(await confirmReplace())) return;
+    if (!(await confirmReplace('open'))) return;
     const opened = await window.restinator.openFile();
     if (!opened) return;
     applyOpened(opened);
@@ -980,9 +1030,15 @@ name=restinator&role=admin
 
   async function openRecent(filePath) {
     if (state.filePath && pathEquals(state.filePath, filePath) && !state.dirty) return;
-    if (!(await confirmReplace())) return;
+    if (!(await confirmReplace('open'))) return;
     const opened = await window.restinator.openPath(filePath);
     if (!opened) return;
+    applyOpened(opened);
+  }
+
+  async function loadStartupDocument() {
+    const opened = await window.restinator.loadStartup(DEFAULT_CONTENT);
+    state.startupPath = opened.filePath;
     applyOpened(opened);
   }
 
@@ -1028,6 +1084,9 @@ name=restinator&role=admin
     resultEditor.resize();
   });
 
+  window.restinator.onMenuNew(() => {
+    newDocument();
+  });
   window.restinator.onMenuOpen(() => {
     openFile();
   });
@@ -1088,6 +1147,7 @@ name=restinator&role=admin
   const menuBar = window.RestMenuBar({
     el: menuBarEl,
     actions: {
+      new: () => newDocument(),
       open: () => openFile(),
       save: () => save(false),
       saveAs: () => save(true),
@@ -1139,6 +1199,10 @@ name=restinator&role=admin
 
   window.restinator.getChrome().then(applyChrome);
   window.restinator.onMenuChrome(applyChrome);
+  window.restinator.onAutosaveAndQuit(() => {
+    prepareQuit();
+  });
+  loadStartupDocument();
 
   let copyReset;
   els.copyUrl.addEventListener('click', async () => {
