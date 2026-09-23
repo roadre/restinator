@@ -30,12 +30,28 @@
             <span id="result-timing"></span>
             <span id="result-size"></span>
           </header>
-          <nav id="tabs">
-            <button type="button" class="tab active" data-tab="json">JSON</button>
-            <button type="button" class="tab" data-tab="request">Request</button>
-            <button type="button" class="tab" data-tab="raw">Raw</button>
-            <button type="button" class="tab" data-tab="html">HTML</button>
-          </nav>
+          <div id="result-toolbar">
+            <nav id="tabs">
+              <button type="button" class="tab active" data-tab="json">JSON</button>
+              <button type="button" class="tab" data-tab="request">Request</button>
+              <button type="button" class="tab" data-tab="raw">Raw</button>
+              <button type="button" class="tab" data-tab="html">HTML</button>
+            </nav>
+            <div id="result-search-wrap" title="Im Ergebnis suchen (JSON, Request, Raw)">
+              <input
+                type="search"
+                id="result-search"
+                placeholder="Im Ergebnis suchen…"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div id="result-search-nav">
+                <button type="button" id="result-search-prev" title="Vorheriger Treffer" aria-label="Vorheriger Treffer">↑</button>
+                <button type="button" id="result-search-next" title="Nächster Treffer" aria-label="Nächster Treffer">↓</button>
+              </div>
+              <span id="result-search-count" aria-live="polite"></span>
+            </div>
+          </div>
           <div id="result-body">
             <div id="result-editor"></div>
             <iframe id="html-view" sandbox></iframe>

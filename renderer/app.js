@@ -125,6 +125,10 @@ name=restinator&role=admin
 
   window.restinator.getTheme().then(applyTheme);
 
+  const AceRange = ace.require('ace/range').Range;
+  let resultSearchMarkerIds = [];
+  let resultSearchRanges = [];
+
   const state = {
     filePath: null,
     dirty: false,
@@ -133,7 +137,9 @@ name=restinator&role=admin
     sending: false,
     pendingRequest: null,
     displayUrl: '',
-    hideSecrets: true
+    hideSecrets: true,
+    resultSearchQuery: '',
+    resultSearchIndex: 0
   };
 
   const els = {
@@ -148,6 +154,10 @@ name=restinator&role=admin
     timing: document.getElementById('result-timing'),
     size: document.getElementById('result-size'),
     tabs: document.querySelectorAll('.tab'),
+    resultSearch: document.getElementById('result-search'),
+    resultSearchPrev: document.getElementById('result-search-prev'),
+    resultSearchNext: document.getElementById('result-search-next'),
+    resultSearchCount: document.getElementById('result-search-count'),
     resultEditor: document.getElementById('result-editor'),
     htmlView: document.getElementById('html-view')
   };
@@ -378,6 +388,149 @@ name=restinator&role=admin
       .join('\n');
   }
 
+  function isResultSearchSupported() {
+    return state.tab !== 'html';
+  }
+
+  function clearResultSearchMarkers() {
+    const session = resultEditor.getSession();
+    resultSearchMarkerIds.forEach((id) => session.removeMarker(id));
+    resultSearchMarkerIds = [];
+  }
+
+  function findResultSearchMatches(query) {
+    const needle = String(query || '');
+    if (!needle) return [];
+    const doc = resultEditor.getSession().getDocument();
+    const needleLower = needle.toLowerCase();
+    const ranges = [];
+    for (let row = 0; row < doc.getLength(); row += 1) {
+      const line = doc.getLine(row);
+      const lineLower = line.toLowerCase();
+      let col = 0;
+      while (col < line.length) {
+        const idx = lineLower.indexOf(needleLower, col);
+        if (idx === -1) break;
+        ranges.push(new AceRange(row, idx, row, idx + needle.length));
+        col = idx + needle.length;
+      }
+    }
+    return ranges;
+  }
+
+  function updateResultSearchCount(count, hasQuery, activeIndex = 0) {
+    const el = els.resultSearchCount;
+    if (!hasQuery) {
+      el.textContent = '';
+      el.classList.remove('no-match');
+      return;
+    }
+    if (count === 0) {
+      el.textContent = 'Keine Treffer';
+      el.classList.add('no-match');
+      return;
+    }
+    if (count === 1) {
+      el.textContent = '1 Treffer';
+    } else {
+      el.textContent = `${activeIndex + 1} / ${count}`;
+    }
+    el.classList.remove('no-match');
+  }
+
+  function updateResultSearchNav(count, enabled) {
+    const canNavigate = enabled && count > 1;
+    els.resultSearchPrev.disabled = !canNavigate;
+    els.resultSearchNext.disabled = !canNavigate;
+  }
+
+  function paintResultSearchMarkers(ranges, activeIndex) {
+    clearResultSearchMarkers();
+    const session = resultEditor.getSession();
+    ranges.forEach((range, index) => {
+      const className = index === activeIndex ? 'ace_result_search_current' : 'ace_result_search';
+      resultSearchMarkerIds.push(session.addMarker(range, className, 'text', false));
+    });
+  }
+
+  function scrollToResultSearchMatch(range) {
+    resultEditor.scrollToLine(range.start.row, true, true, () => {});
+    resultEditor.gotoLine(range.start.row + 1, range.start.column, true);
+  }
+
+  function normalizeResultSearchIndex(index, count) {
+    if (count <= 0) return 0;
+    return ((index % count) + count) % count;
+  }
+
+  function setActiveResultSearchIndex(index, ranges, hasQuery) {
+    resultSearchRanges = ranges;
+    if (!ranges.length) {
+      state.resultSearchIndex = 0;
+      clearResultSearchMarkers();
+      updateResultSearchCount(0, hasQuery);
+      updateResultSearchNav(0, hasQuery && isResultSearchSupported());
+      return;
+    }
+
+    state.resultSearchIndex = normalizeResultSearchIndex(index, ranges.length);
+    paintResultSearchMarkers(ranges, state.resultSearchIndex);
+    scrollToResultSearchMatch(ranges[state.resultSearchIndex]);
+    updateResultSearchCount(ranges.length, hasQuery, state.resultSearchIndex);
+    updateResultSearchNav(ranges.length, hasQuery && isResultSearchSupported());
+  }
+
+  function resolveResultSearchIndex(ranges, preserveIndex) {
+    if (!ranges.length) return 0;
+    if (!preserveIndex) return 0;
+    if (state.resultSearchIndex >= ranges.length) return 0;
+    return state.resultSearchIndex;
+  }
+
+  function updateResultSearchUi() {
+    const supported = isResultSearchSupported();
+    els.resultSearch.disabled = !supported;
+    els.resultSearch.placeholder = supported
+      ? 'Im Ergebnis suchen…'
+      : 'Nur JSON, Request, Raw';
+    if (!supported) {
+      resultSearchRanges = [];
+      clearResultSearchMarkers();
+      state.resultSearchIndex = 0;
+      updateResultSearchCount(0, false);
+      updateResultSearchNav(0, false);
+    }
+  }
+
+  function applyResultSearch(options = {}) {
+    const preserveIndex = options.preserveIndex === true;
+    updateResultSearchUi();
+
+    const query = state.resultSearchQuery.trim();
+    const hasQuery = !!query;
+    if (!hasQuery || !isResultSearchSupported() || els.resultEditor.classList.contains('hidden')) {
+      resultSearchRanges = [];
+      clearResultSearchMarkers();
+      state.resultSearchIndex = 0;
+      updateResultSearchCount(0, false);
+      updateResultSearchNav(0, false);
+      return;
+    }
+
+    const ranges = findResultSearchMatches(query);
+    const index = resolveResultSearchIndex(ranges, preserveIndex);
+    setActiveResultSearchIndex(index, ranges, true);
+  }
+
+  function stepResultSearch(direction) {
+    if (!resultSearchRanges.length) return;
+    setActiveResultSearchIndex(state.resultSearchIndex + direction, resultSearchRanges, true);
+  }
+
+  function scheduleResultSearch() {
+    requestAnimationFrame(() => applyResultSearch({ preserveIndex: true }));
+  }
+
   function showTab(tab) {
     state.tab = tab;
     els.tabs.forEach((button) => {
@@ -387,6 +540,7 @@ name=restinator&role=admin
     const html = tab === 'html';
     els.htmlView.classList.toggle('visible', html);
     els.resultEditor.classList.toggle('hidden', html);
+    updateResultSearchUi();
     renderResult();
     requestAnimationFrame(() => {
       resultEditor.resize();
@@ -432,6 +586,7 @@ name=restinator&role=admin
   function renderResult() {
     if (state.sending) {
       showRunning(state.pendingRequest);
+      scheduleResultSearch();
       return;
     }
     const last = state.last;
@@ -442,12 +597,14 @@ name=restinator&role=admin
         setResultMode('ace/mode/text');
         resultEditor.setValue('Submit a request with F9 (or Edit → Submit).', -1);
       }
+      scheduleResultSearch();
       return;
     }
 
     if (last.error) {
       if (state.tab === 'html') {
         els.htmlView.srcdoc = `<pre style="white-space:pre-wrap;font-family:monospace;padding:16px;color:#b91c1c">${escapeHtml(last.error)}</pre>`;
+        scheduleResultSearch();
         return;
       }
       setResultMode('ace/mode/text');
@@ -456,6 +613,7 @@ name=restinator&role=admin
           ? `${formatSentRequest(last.request, last.response)}\n\nERROR\n${last.error}`
           : last.error;
       resultEditor.setValue(state.tab === 'request' ? requestText : last.error, -1);
+      scheduleResultSearch();
       return;
     }
 
@@ -466,22 +624,26 @@ name=restinator&role=admin
         pretty || `Not JSON.\n\n${last.response.body || '(empty body)'}`,
         -1
       );
+      scheduleResultSearch();
       return;
     }
 
     if (state.tab === 'request') {
       setResultMode('ace/mode/text');
       resultEditor.setValue(formatSentRequest(last.request, last.response), -1);
+      scheduleResultSearch();
       return;
     }
 
     if (state.tab === 'raw') {
       setResultMode('ace/mode/text');
       resultEditor.setValue(last.response.body || '', -1);
+      scheduleResultSearch();
       return;
     }
 
     els.htmlView.srcdoc = htmlPreview(last.response.body, last.response.url);
+    scheduleResultSearch();
   }
 
   function escapeHtml(text) {
@@ -831,6 +993,15 @@ name=restinator&role=admin
   els.tabs.forEach((button) => {
     button.addEventListener('click', () => showTab(button.dataset.tab));
   });
+
+  els.resultSearch.addEventListener('input', () => {
+    state.resultSearchQuery = els.resultSearch.value;
+    applyResultSearch({ preserveIndex: false });
+  });
+  els.resultSearchPrev.addEventListener('click', () => stepResultSearch(-1));
+  els.resultSearchNext.addEventListener('click', () => stepResultSearch(1));
+  updateResultSearchUi();
+  updateResultSearchNav(0, false);
 
   let dragging = false;
   els.splitter.addEventListener('mousedown', (event) => {

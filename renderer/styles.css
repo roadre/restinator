@@ -328,10 +328,98 @@ body {
   color: var(--error);
 }
 
-#tabs {
+#result-toolbar {
   display: flex;
+  align-items: stretch;
+  gap: 12px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
+  padding-right: 12px;
+}
+
+#tabs {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#result-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: 280px;
+  max-width: 420px;
+}
+
+#result-search-nav {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+#result-search-prev,
+#result-search-next {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  width: 24px;
+  height: 26px;
+  padding: 0;
+  line-height: 1;
+  font-size: 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+#result-search-prev:hover:not(:disabled),
+#result-search-next:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+#result-search-prev:disabled,
+#result-search-next:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#result-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12px;
+}
+
+#result-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#result-search:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#result-search-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  min-width: 5.5em;
+  text-align: right;
+}
+
+#result-search-count.no-match {
+  color: var(--warning);
 }
 
 .tab {
@@ -392,6 +480,21 @@ body {
 
 .ace_editor {
   font-family: 'JetBrains Mono', Menlo, Consolas, 'Courier New', monospace;
+}
+
+.ace_marker-layer .ace_result_search {
+  position: absolute;
+  background: rgba(255, 213, 64, 0.35);
+  border-radius: 2px;
+  z-index: 4;
+}
+
+.ace_marker-layer .ace_result_search_current {
+  position: absolute;
+  background: rgba(255, 170, 0, 0.55);
+  outline: 1px solid rgba(255, 170, 0, 0.9);
+  border-radius: 2px;
+  z-index: 5;
 }
 
 .ace_gutter-cell.ace_run {
